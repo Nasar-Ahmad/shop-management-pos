@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# SQLite database
+Database/*.db
+Database/*.sqlite
+Database/*.sqlite3
+
+# Generated bills
+Bills/
+
+# Backups
+backups/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# VS Code
+.vscode/
+
+# OS files
+Thumbs.db
+.DS_Store
