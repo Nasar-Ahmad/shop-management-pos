@@ -149,6 +149,17 @@ def create_tables():
     add_column_if_missing(cursor, "payments", "date", "TEXT")
     add_column_if_missing(cursor, "payments", "time", "TEXT")
 
+    # EXPENSES
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            amount REAL DEFAULT 0,
+            date TEXT,
+            note TEXT DEFAULT ''
+        )
+    """)
+
     # DEFAULT ADMIN
     cursor.execute("SELECT COUNT(*) FROM users")
     user_count = cursor.fetchone()[0]
@@ -738,6 +749,11 @@ def show_dashboard():
     nav_button(
         "Udhar / Credit",
         credit_page
+    )
+
+    nav_button(
+        "Expenses",
+        expenses_page
     )
 
     nav_button(
@@ -3952,6 +3968,352 @@ def payment_history():
     )
 
     load_history()
+
+
+# =========================================================
+# EXPENSES
+# =========================================================
+
+def expenses_page(parent):
+
+    for widget in parent.winfo_children():
+        widget.destroy()
+
+    c = colors()
+
+    create_label(
+        parent,
+        "Expenses",
+        30,
+        True
+    ).pack(
+        anchor="w",
+        padx=30,
+        pady=(30, 15)
+    )
+
+    # ADD EXPENSE
+
+    add_frame = ctk.CTkFrame(
+        parent,
+        fg_color=c["card"],
+        corner_radius=15
+    )
+
+    add_frame.pack(
+        fill="x",
+        padx=30,
+        pady=(0, 15)
+    )
+
+    name_entry = create_entry(
+        add_frame,
+        "Expense Name",
+        200
+    )
+    name_entry.pack(
+        side="left",
+        padx=10,
+        pady=15
+    )
+
+    amount_entry = create_entry(
+        add_frame,
+        "Amount",
+        150
+    )
+    amount_entry.pack(
+        side="left",
+        padx=10
+    )
+
+    date_frame, date_entry = create_date_picker(
+        add_frame,
+        180,
+        "Date YYYY-MM-DD"
+    )
+    date_frame.pack(
+        side="left",
+        padx=10,
+        pady=15
+    )
+
+    note_entry = create_entry(
+        add_frame,
+        "Note (Optional)",
+        220
+    )
+    note_entry.pack(
+        side="left",
+        padx=10
+    )
+
+    table = ctk.CTkScrollableFrame(
+        parent,
+        fg_color=c["card"],
+        corner_radius=15
+    )
+    table.pack(
+        fill="both",
+        expand=True,
+        padx=30,
+        pady=(0, 30)
+    )
+
+    headers = [
+        "ID",
+        "Date",
+        "Expense Name",
+        "Amount",
+        "Note",
+        "Remove"
+    ]
+
+    for col, header in enumerate(headers):
+        create_label(
+            table,
+            header,
+            13,
+            True
+        ).grid(
+            row=0,
+            column=col,
+            padx=12,
+            pady=15,
+            sticky="w"
+        )
+
+    # SEARCH
+
+    search_frame = ctk.CTkFrame(
+        parent,
+        fg_color=c["card"],
+        corner_radius=15
+    )
+    search_frame.pack(
+        fill="x",
+        padx=30,
+        pady=(0, 15)
+    )
+
+    search_date_frame, search_date_entry = create_date_picker(
+        search_frame,
+        180,
+        "Search Date YYYY-MM-DD"
+    )
+    search_date_frame.pack(
+        side="left",
+        padx=10,
+        pady=15
+    )
+
+    search_name = create_entry(
+        search_frame,
+        "Search Expense Name",
+        220
+    )
+    search_name.pack(
+        side="left",
+        padx=10
+    )
+
+    def load_expenses():
+
+        for widget in table.winfo_children():
+            if widget.grid_info().get("row", 0) != 0:
+                widget.destroy()
+
+        date = search_date_entry.get().strip()
+        name = search_name.get().strip()
+
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        query = """
+            SELECT id, date, name, amount, note
+            FROM expenses
+            WHERE 1 = 1
+        """
+
+        params = []
+
+        if date:
+            query += " AND date = ?"
+            params.append(date)
+
+        if name:
+            query += " AND name LIKE ?"
+            params.append(f"%{name}%")
+
+        query += " ORDER BY id DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        connection.close()
+
+        for row_num, row in enumerate(rows, start=1):
+
+            expense_id, date, name, amount, note = row
+
+            values = [
+                expense_id,
+                date or "-",
+                name,
+                f"Rs. {amount:,.2f}",
+                note or "-"
+            ]
+
+            for col, value in enumerate(values):
+                create_label(
+                    table,
+                    str(value),
+                    13
+                ).grid(
+                    row=row_num,
+                    column=col,
+                    padx=12,
+                    pady=10,
+                    sticky="w"
+                )
+
+            ctk.CTkButton(
+                table,
+                text="Remove",
+                width=80,
+                height=30,
+                fg_color="#DC2626",
+                hover_color="#B91C1C",
+                command=lambda eid=expense_id: delete_expense(eid, parent)
+            ).grid(
+                row=row_num,
+                column=5,
+                padx=8,
+                pady=8
+            )
+
+    def add_expense():
+
+        name = name_entry.get().strip()
+        amount_text = amount_entry.get().strip()
+        date = date_entry.get().strip()
+        note = note_entry.get().strip()
+
+        if not name or not amount_text or not date:
+            messagebox.showerror(
+                "Error",
+                "Please enter expense name, amount and date."
+            )
+            return
+
+        try:
+            amount = float(amount_text)
+        except ValueError:
+            messagebox.showerror(
+                "Error",
+                "Amount must be a valid number."
+            )
+            return
+
+        if amount < 0:
+            messagebox.showerror(
+                "Error",
+                "Amount cannot be negative."
+            )
+            return
+
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO expenses (name, amount, date, note)
+            VALUES (?, ?, ?, ?)
+            """,
+            (name, amount, date, note)
+        )
+
+        connection.commit()
+        connection.close()
+
+        name_entry.delete(0, "end")
+        amount_entry.delete(0, "end")
+        date_entry.delete(0, "end")
+        note_entry.delete(0, "end")
+
+        load_expenses()
+
+        messagebox.showinfo(
+            "Success",
+            "Expense added successfully."
+        )
+
+    def search_expenses():
+        load_expenses()
+
+    def clear_search():
+        search_date_entry.delete(0, "end")
+        search_name.delete(0, "end")
+        load_expenses()
+
+    create_button(
+        add_frame,
+        "Add Expense",
+        add_expense,
+        130
+    ).pack(
+        side="left",
+        padx=10
+    )
+
+    create_button(
+        search_frame,
+        "Search",
+        search_expenses,
+        100
+    ).pack(
+        side="left",
+        padx=5
+    )
+
+    ctk.CTkButton(
+        search_frame,
+        text="Clear",
+        command=clear_search,
+        width=90,
+        height=40
+    ).pack(
+        side="left",
+        padx=5
+    )
+
+    load_expenses()
+
+
+def delete_expense(expense_id, parent):
+
+    if not messagebox.askyesno(
+        "Confirm Delete",
+        "Are you sure you want to remove this expense?"
+    ):
+        return
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "DELETE FROM expenses WHERE id = ?",
+        (expense_id,)
+    )
+
+    connection.commit()
+    connection.close()
+
+    expenses_page(parent)
+
+    messagebox.showinfo(
+        "Success",
+        "Expense removed successfully."
+    )
 
 
 # =========================================================
